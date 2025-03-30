@@ -7,7 +7,7 @@
 # RSS location
 URL="https://www.freebsd.org/security/feed.xml"
 # Script version
-VERSION="20250301"
+VERSION="20250330"
 # Used with date formating
 DATE_TMP=""
 # Check if an item is new or not
@@ -133,12 +133,13 @@ limitTo3Months () {
 		D3a=`date -v-2m "+%Y-%m"`
 	elif [ "${OS}" = "Linux" ]
 	then
+		current=`date "+%Y-%m-01"`
 		D1=`date "+%b %y"`
-		D2=`date -d "last month" "+%b %y"`
-		D3=`date -d "2 months ago" "+%b %y"`
+		D2=`date -d "${current} -1 month" "+%b %y"`
+		D3=`date -d "${current} -2 months" "+%b %y"`
 		D1a=`date "+%Y-%m"`
-		D2a=`date -d "last month" "+%Y-%m"`
-		D3a=`date -d "2 months ago" "+%Y-%m"`
+		D2a=`date -d "${current} -1 month" "+%Y-%m"`
+		D3a=`date -d "${current} -2 months" "+%Y-%m"`
 	fi
 
 	# Clean and sort the feed.
