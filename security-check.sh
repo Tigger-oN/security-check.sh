@@ -1,29 +1,33 @@
 #!/bin/sh
 #
-# Present the last records in the FreeBSD Security Advisories and
-# Errata notices RSS
-#
+# Present the most recent FreeBSD Security Advisories and Errata notices.
+# Orginally used the RSS, but that was changed to something pointless in July,
+# 2025.
 
-# RSS location
-URL="https://www.freebsd.org/security/feed.xml"
 # Script version
-VERSION="20250330"
-# Used with date formating
-DATE_TMP=""
+VERSION="20250731"
+# URLs
+URL_ADVISORY="https://www.freebsd.org/security/advisories/"
+URL_ERRATA="https://www.freebsd.org/security/notices/"
+# The URL data
+RAW_ADVISORY=""
+RAW_ERRATA=""
 # Check if an item is new or not
 LAST_CHECK_FILE="${HOME}/.${0##*/}.last"
 LAST_CHECK_DATE="0"
-NEW_ITEM=""
-# And just in case someone wants to use with Linux
-OS=`uname`
+# If an item is new, set to "yes"
+ITEM_NEW=""
+# And keep track of the most recent date, YYYYMMDD format
+ITEM_RECENT_DATE=""
 
 usage () {
 	out="
 Display the last 3 months of FreeBSD Security Advisories and Errata
-notices published in the FreeBSD security feed.
+notices published by FreeBSD.
 
-The feed is located here:
- ${URL}
+The Security Advisories and Errata Notices are located here:
+ ${URL_ADVISORY}
+ ${URL_ERRATA}
 
 Script version: ${VERSION}
 
@@ -32,172 +36,192 @@ Script version: ${VERSION}
 	exit
 }
 
-# For some odd reason, the feed has more than one date format.
-# `date` options we need are OS dependent.
-dateFormat () {
-	NEW_ITEM=""
-	if [ -z "${1}" ]
-	then
-		DATE_TMP="${1}"
-		return
-	fi
-	if [ "${OS}" = "FreeBSD" ]
-	then
-		# Which date format version are we correcting?
-		numb_only=`printf "%s" "${1}" | grep -o "[0-9-]\{10\}"`
-		if [ -n "${numb_only}" ]
-		then
-			# Input is like 2025-02-28
-			DATE_TMP=`date -j -f "%Y-%m-%d" "${1}" "+%e %b, %Y" 2> /dev/null`
-			tmp=`date -j -f "%Y-%m-%d %H:%M:%S" "${1} 00:00:00" "+%s" 2> /dev/null`
-		else
-			# Input is like 28 Feb 25
-			DATE_TMP=`date -j -f "%d %b %y" "${1}" "+%e %b, %Y" 2> /dev/null`
-			tmp=`date -j -f "%d %b %y %H:%M:%S" "${1} 00:00:00" "+%s" 2> /dev/null`
-		fi
-	elif [ "${OS}" = "Linux" ]
-	then
-		# Linux has `date -d` which handles both feed date formats
-		DATE_TMP=`date -d "${1}" "+%e %b, %Y" 2> /dev/null`
-		tmp=`date -d "${1} 00:00:00" "+%s" 2> /dev/null`
-	else
-		DATE_TMP="${1}"
-		return
-	fi
-	if [ -n "${tmp}" -a ${LAST_CHECK_DATE} -lt "${tmp}" ]
-	then
-		NEW_ITEM="yes"
-	fi
-}
-
-# The date of the last check
-lastCheck () {
-	if [ -f "${LAST_CHECK_FILE}" ]
-	then
-		LAST_CHECK_DATE=`date -r "${LAST_CHECK_FILE}" +%s`
-	fi
-	touch "${LAST_CHECK_FILE}"
-}
-
-getFeed () {
+getURLData () {
 	printf "\nGetting the latest feed data...\n"
-	if [ "${OS}" = "FreeBSD" ]
+	# Check for a download app
+	if [ -n "`command -v fetch`" ]
 	then
-		FEED=`fetch -qo - "${URL}"`
+		RAW_ADVISORY=`fetch -qo - "${URL_ADVISORY}"`
+		RAW_ERRATA=`fetch -qo - "${URL_ERRATA}"`
+	elif [ -n "`command -v wget`" ]
+	then
+		RAW_ADVISORY=`wget q0 - "${URL_ADVISORY}"`
+		RAW_ERRATA=`wget q0 - "${URL_ERRATA}"`
+	elif [ -n "`command -v curl`" ]
+	then
+		RAW_ADVISORY=`curl -so - "${URL_ADVISORY}"`
+		RAW_ERRATA=`curl -so - "${URL_ERRATA}"`
 	else
-		# Might be on Linux, need to check
-		if [ -n "`command -v wget`" ]
-		then
-			FEED=`wget -qO - "${URL}"`
-		elif [ -n "`command -v curl`" ]
-		then
-			FEED=`curl -so - "${URL}"`
-		else
-			printf "\nUnable to locate either wget or curl.\n\nAt least one of these is required to download the feed.\n\n"
-			exit
-		fi
+		printf "\nUnable to locate either fetch, wget or curl.\n\nAt least one of these is required to download the raw data from FreeBSD.\n\n"
+		exit
 	fi
 
-	if [ ${?} -ne 0 -o -z "${FEED}" ]
+	if [ ${?} -ne 0 -o -z "${RAW_ADVISORY}" ]
 	then
 		out="
 Possible network issue (guess only) trying to download the latest
-FreeBSD Security Advisories and Errata notices RSS.
+FreeBSD Security Advisories and Errata notices data.
 
-Try again or check your network status"
+Try again or check your network status."
 		printf "%s\n\n" "${out}"
 		exit 1
 	fi
 }
 
-checkFeed () {
-	header=`printf "%s" "${FEED}" | grep -o "<rss version=\"2.0\""`
-	footer=`printf "%s" "${FEED}" | grep -o "</rss>"`
-	if [ "${header}" != "<rss version=\"2.0\"" -o "${footer}" != "</rss>" ]
+checkValid () {
+	header=`printf "%s" "${RAW_ADVISORY}" | grep -o "<!DOCTYPE html>"`
+	footer=`printf "%s" "${RAW_ADVISORY}" | grep -o "</html>"`
+	if [ "${header}" != "<!DOCTYPE html>" -o "${footer}" != "</html>" ]
 	then
-		printf "\nThe downloaded feed appears to be invalid. Recommend checking the network\nconnection. If everything appears to be correct, please try again.\n\nIf the problem continues, manually check the data at:\n\n %s\n\n" "${URL}"
+		printf "\nThe downloaded Security Advisories appear to be invalid. Recommend checking the network\nconnection. If everything appears to be correct, please try again.\n\nIf the problem continues, manually check the data at:\n\n %s\n\n" "${URL_ADVISORY}"
+		exit
+	fi
+	header=`printf "%s" "${RAW_ERRATA}" | grep -o "<!DOCTYPE html>"`
+	footer=`printf "%s" "${RAW_ERRATA}" | grep -o "</html>"`
+	if [ "${header}" != "<!DOCTYPE html>" -o "${footer}" != "</html>" ]
+	then
+		printf "\nThe downloaded Errata Notices appear to be invalid. Recommend checking the network\nconnection. If everything appears to be correct, please try again.\n\nIf the problem continues, manually check the data at:\n\n %s\n\n" "${URL_ERRATA}"
 		exit
 	fi
 }
 
 limitTo3Months () {
-	# Limit to last 3 months and support both date formats used in the feed.
-	if [ "${OS}" = "FreeBSD" ]
+	Y0=`date "+%Y"`
+	M0=`date "+%m"`
+	M0=${M0#0}
+	if [ ${M0} -gt 2 ]
 	then
-		# Possible Darwin would be the same (unconfirmed)
-		D1=`date "+%b %y"`
-		D2=`date -v-1m "+%b %y"`
-		D3=`date -v-2m "+%b %y"`
-		D1a=`date "+%Y-%m"`
-		D2a=`date -v-1m "+%Y-%m"`
-		D3a=`date -v-2m "+%Y-%m"`
-	elif [ "${OS}" = "Linux" ]
+		M1=$((M0 - 1))
+		M2=$((M0 - 2))
+		Y1=${Y0}
+		Y2=${Y0}
+	elif [ ${M0} -eq 2 ]
 	then
-		current=`date "+%Y-%m-01"`
-		D1=`date "+%b %y"`
-		D2=`date -d "${current} -1 month" "+%b %y"`
-		D3=`date -d "${current} -2 months" "+%b %y"`
-		D1a=`date "+%Y-%m"`
-		D2a=`date -d "${current} -1 month" "+%Y-%m"`
-		D3a=`date -d "${current} -2 months" "+%Y-%m"`
+		M1=1
+		M2=12
+		Y1=${Y0}
+		Y2=$((Y0 - 1))
+	elif [ ${M0} -eq 1 ]
+	then
+		M1=12
+		M2=11
+		Y1=$((Y0 - 1))
+		Y2=${Y1}
+	fi
+	if [ $M0 -lt 10 ]
+	then
+		M0="0${M0}"
+	fi
+	if [ $M1 -lt 10 ]
+	then
+		M1="0${M1}"
+	fi
+	if [ $M2 -lt 10 ]
+	then
+		M2="0${M2}"
 	fi
 
-	# Clean and sort the feed.
-	RAW=`printf "%s" "${FEED}" | grep -io "<item>\|<\/item>\|<title>.*<\/title>\|<link>.*<\/link>\|<pubDate>.*<\/pubDate>" | grep -A3 "<item>" | tr -d "\n" | sed 's/--<item>/\n/g; s/<item>//; s/ 00:00 UTC//g' | sort -r | grep "${D1}\|${D2}\|${D3}\|${D1a}\|${D2a}\|${D3a}"`
+	RAW_ADVISORY=`printf "%s" "${RAW_ADVISORY}" | grep -A3 "<td class=\"txtdate\">${Y0}-${M0}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y1}-${M1}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y2}-${M2}-[0-9]\{2\}</td>" | tr -d '\n' | sed 's/<td class="txtdate">/\n<td class="txtdate">/g'`
+	RAW_ERRATA=`printf "%s" "${RAW_ERRATA}" | grep -A3 "<td class=\"txtdate\">${Y0}-${M0}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y1}-${M1}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y2}-${M2}-[0-9]\{2\}</td>" | tr -d '\n' | sed 's/<td class="txtdate">/\n<td class="txtdate">/g'`
 
-	if [ -z "${RAW}" ]
+	if [ -z "${RAW_ADVISORY}" -a -z "${RAW_ERRATA}" ]
 	then
-		printf "\nNo FreeBSD Security Advisories or Erratas for the last 3 months.\n\n"
+		printf "\nNo FreeBSD Security Advisories or Erratas Notices for the last 3 months.\n\n"
 		exit
+	fi
+
+}
+
+# The date of the last item seen.
+checkLast () {
+	if [ -f "${LAST_CHECK_FILE}" ]
+	then
+		LAST_CHECK_DATE=`date -r "${LAST_CHECK_FILE}" +%Y%m%d`
 	fi
 }
 
+# And keep track for the date of the most recent item seen.
+setLast () {
+	touch -t "${ITEM_RECENT_DATE}0000" "${LAST_CHECK_FILE}"
+}
+
+# Check if the item date is new.
+# Known limitation: We are only checking the date, not the items. If a
+# secondary release is done on the same day, after the script has been called,
+# it is possible the "new item" tag will be missing for the second update.
+# Possible fix: Always show "new item" if the day is the same?
+checkNew () {
+	chkDate=`printf "%s" "${1}" | sed 's/-//g'`
+	if [ -n "${LAST_CHECK_DATE}" -a ${LAST_CHECK_DATE} -lt ${chkDate} ]
+	then
+		ITEM_NEW="yes"
+	else
+		ITEM_NEW=""
+	fi
+	if [ -z "${ITEM_RECENT_DATE}" ]
+	then
+		ITEM_RECENT_DATE="${chkDate}"
+	elif [ ${chkDate} -gt ${ITEM_RECENT_DATE} ]
+	then
+		ITEM_RECENT_DATE="${chkDate}"
+	fi
+}
+
+# Pass the "group" and raw data to be displayed.
+displayData () {
+	if [ -z "${2}" ]
+	then
+		printf "\nNo %s in the last 3 months.\n\n" "${1}"
+		return
+	fi
+
+	IFS="
+"
+	printf "\n%s\n\n" "${1}"
+
+	for l in ${2}
+	do
+		d=${l##*<td class=\"txtdate\">}
+		d=${d%%</td>*}
+		u=${l##*href=\"}
+		t=${u##*\">}
+		t=${t%%<*}
+		u=${u%%\">*}
+		checkNew "${d}"
+		if [ "${ITEM_NEW}" = "yes" ]
+		then
+			printf "%s\n" "--- New item ---"
+		fi
+		printf "%s - %s\n%s\n\n" "${d}" "${t}" "${u}"
+		#printf "date : %s\ntitle: %s\nURL  : %s\n" "${d}" "${t}" "${u}"
+	done
+}
+
+# Any arg, show the usage
 if [ -n "${1}" ]
 then
 	usage
 fi
 
-# Get the raw feed
-getFeed
+# otherwise, get the URL contents
+getURLData
 
-# Make sure we the feed is valid
-checkFeed
+# check for valid data
+checkValid
 
-# Limit to 3 months
+# limit to the most recent records
 limitTo3Months
 
 # Get the details of the last check
-lastCheck
+checkLast
 
-# Format the feed lines
-IFS="
-"
-headerShown=""
-for l in ${RAW}
-do
-	t=${l##*<title>}
-	t=${t%%</title>*}
-	a=${l##*<link>}
-	a=${a%%</link>*}
-	d=${l##*<pubDate>}
-	d=${d%%</pubDate>*}
-	dateFormat "${d}"
-	d="${DATE_TMP}"
-	type=`printf "%s" "${t}" | grep -o "^FreeBSD-SA-[0-9]\{2\}:"`
-	if [ -n "${type}" -a -z "${headerShown}" ]
-	then
-		printf "\nSecurity Advisories\n\n"
-		headerShown="1"
-	elif [ -z "${type}" -a "${headerShown}" != "2" ]
-	then
-		printf "\nErrata notices\n\n"
-		headerShown="2"
-	fi
-	if [ -n "${NEW_ITEM}" ]
-	then
-		printf "%s\n" "--- New item ---"
-	fi
-	printf "%s - %s\n%s\n\n" "${d}" "${t}" "${a}"
-done
+# Show any items
+displayData "Security Advisories" "${RAW_ADVISORY}"
+displayData "Errata Notices" "${RAW_ERRATA}"
+
+# Keep track of seen items
+setLast 
+
+# Done
 exit
 
