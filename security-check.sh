@@ -45,8 +45,8 @@ getURLData () {
 		RAW_ERRATA=`fetch -qo - "${URL_ERRATA}"`
 	elif [ -n "`command -v wget`" ]
 	then
-		RAW_ADVISORY=`wget q0 - "${URL_ADVISORY}"`
-		RAW_ERRATA=`wget q0 - "${URL_ERRATA}"`
+		RAW_ADVISORY=`wget -qO - "${URL_ADVISORY}"`
+		RAW_ERRATA=`wget -qO - "${URL_ERRATA}"`
 	elif [ -n "`command -v curl`" ]
 	then
 		RAW_ADVISORY=`curl -so - "${URL_ADVISORY}"`
