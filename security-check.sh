@@ -5,7 +5,7 @@
 # 2025.
 
 # Script version
-VERSION="20250801"
+VERSION="20251002"
 # URLs
 URL_ADVISORY="https://www.freebsd.org/security/advisories/"
 URL_ERRATA="https://www.freebsd.org/security/notices/"
@@ -19,15 +19,13 @@ LAST_CHECK_DATE="0"
 ITEM_NEW=""
 # And keep track of the most recent date, YYYYMMDD format
 ITEM_RECENT_DATE=""
-# Which app is used to download the data?
-APP_WEB=""
 # Used to pass data around
 DATA=""
 # Date values for limiting
-Y0=`date "+%Y"`
+Y0="$(date "+%Y")"
 Y1=""
 Y2=""
-M0=`date "+%m"`
+M0="$(date "+%m")"
 M1=""
 M2=""
 
@@ -47,56 +45,43 @@ Script version: ${VERSION}
 	exit
 }
 
-checkWebApp () {
-	printf "\nChecking for a download application.\n"
-	if [ -n "`command -v fetch`" ]
+getURL () {
+	if [ -n "$(command -v fetch)" ]
 	then
-		APP_WEB="fetch -qo -"
-	elif [ -n "`command -v wget`" ]
+		fetch -qo - "${1}" 2>/dev/null
+	elif [ -n "$(command -v wget)" ]
 	then
-		APP_WEB="wget -qO -"
-	elif [ -n "`command -v curl`" ]
+		wget -qO - "${1}" 2>/dev/null
+	elif [ -n "$(command -v curl)" ]
 	then
-		APP_WEB="curl -so -"
+		curl -so - "${1}" 2>/dev/null
 	else
 		printf "\nUnable to locate either fetch, wget or curl.\n\nAt least one of these is required to download the raw data from the FreeBSD website.\n\n"
-		exit
-	fi
-}
-
-getURLData () {
-	printf "\nGetting the latest data...\n"
-	RAW_ADVISORY=`${APP_WEB} "${URL_ADVISORY}"`
-	RAW_ERRATA=`${APP_WEB} "${URL_ERRATA}"`
-
-	if [ ${?} -ne 0 -o -z "${RAW_ADVISORY}" ]
-	then
-		out="
-Possible network issue (guess only) trying to download the latest
-FreeBSD Security Advisories and Errata notices data.
-
-Try again or check your network status."
-		printf "%s\n\n" "${out}"
 		exit 1
 	fi
 }
 
+getURLError () {
+	printf "\nPossible network issue obtaining the FreeBSD data from:\n\n %s\n\nCheck your network connection or try again.\n\n" "${1}"
+	exit 1
+}
+
 checkValidData () {
-	header=`printf "%s" "${2}" | grep -o "<!DOCTYPE html>"`
-	footer=`printf "%s" "${2}" | grep -o "</html>"`
+	header="$(printf "%s" "${2}" | grep -o "<!DOCTYPE html>")"
+	footer="$(printf "%s" "${2}" | grep -o "</html>")"
 	if [ "${header}" != "<!DOCTYPE html>" -o "${footer}" != "</html>" ]
 	then
 		printf "\nThe downloaded %s appear to be invalid. Recommend checking the network\nconnection. If everything appears to be correct, please try again.\n\nIf the problem continues, manually check the data at:\n\n %s\n\n" "${1}" "${3}"
-		exit
+		exit 1
 	fi
 }
 
 limitTo3Months () {
-	M0=${M0#0}
+	M0="${M0#0}"
 	M1=$((M0 - 1))
 	M2=$((M0 - 2))
-	Y1=${Y0}
-	Y2=${Y0}
+	Y1="${Y0}"
+	Y2="${Y0}"
 	if [ ${M1} -lt 1 ]
 	then
 		M1=$((M1 + 12))
@@ -107,29 +92,20 @@ limitTo3Months () {
 		M2=$((M2 + 12))
 		Y2=$((Y0 - 1))
 	fi
-	if [ $M0 -lt 10 ]
-	then
-		M0="0${M0}"
-	fi
-	if [ $M1 -lt 10 ]
-	then
-		M1="0${M1}"
-	fi
-	if [ $M2 -lt 10 ]
-	then
-		M2="0${M2}"
-	fi
+	M0=$(printf "%02d" "${M0}")
+	M1=$(printf "%02d" "${M1}")
+	M2=$(printf "%02d" "${M2}")
 }
 
 extract3Months () {
-	DATA=`printf "%s" "${1}" | grep -A3 "<td class=\"txtdate\">${Y0}-${M0}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y1}-${M1}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y2}-${M2}-[0-9]\{2\}</td>" | tr -d '\n' | sed 's/<td class="txtdate">/\n<td class="txtdate">/g'`
+	DATA="$(printf "%s" "${1}" | grep -A3 "<td class=\"txtdate\">${Y0}-${M0}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y1}-${M1}-[0-9]\{2\}</td>\|<td class=\"txtdate\">${Y2}-${M2}-[0-9]\{2\}</td>" | tr -d '\n' | sed 's/<td class="txtdate">/\n<td class="txtdate">/g')"
 }
 
 # The date of the last item seen.
 checkLast () {
 	if [ -f "${LAST_CHECK_FILE}" ]
 	then
-		LAST_CHECK_DATE=`date -r "${LAST_CHECK_FILE}" +%Y%m%d`
+		LAST_CHECK_DATE="$(date -r "${LAST_CHECK_FILE}" +%Y%m%d)"
 	fi
 }
 
@@ -147,7 +123,7 @@ setLast () {
 # it is possible the "new item" tag will be missing for the second update.
 # Possible fix: Always show "new item" if the day is the same?
 checkNew () {
-	chkDate=`printf "%s" "${1}" | sed 's/-//g'`
+	chkDate="$(printf "%s" "${1}" | sed 's/-//g')"
 	if [ -n "${LAST_CHECK_DATE}" -a ${LAST_CHECK_DATE} -lt ${chkDate} ]
 	then
 		ITEM_NEW="yes"
@@ -165,9 +141,7 @@ checkNew () {
 
 # Pass the "group" and raw data to be displayed.
 displayData () {
-
 	extract3Months "${2}"
-
 	if [ -z "${DATA}" ]
 	then
 		printf "\nNo %s in the last 3 months.\n" "${1}"
@@ -184,12 +158,12 @@ displayData () {
 
 	for l in ${DATA}
 	do
-		d=${l##*<td class=\"txtdate\">}
-		d=${d%%</td>*}
-		u=${l##*href=\"}
-		t=${u##*\">}
-		t=${t%%<*}
-		u=${u%%\">*}
+		d="${l##*<td class=\"txtdate\">}"
+		d="${d%%</td>*}"
+		u="${l##*href=\"}"
+		t="${u##*\">}"
+		t="${t%%<*}"
+		u="${u%%\">*}"
 		checkNew "${d}"
 		if [ "${ITEM_NEW}" = "yes" ]
 		then
@@ -205,11 +179,18 @@ then
 	usage
 fi
 
-# Confirm there is an app that can download
-checkWebApp
-
 # get the URL contents
-getURLData
+printf "\nRequesting the remote data.\n"
+RAW_ADVISORY="$(getURL "${URL_ADVISORY}")"
+if [ ${?} -ne 0 ]
+then
+	getURLError "${URL_ADVISORY}"
+fi
+RAW_ERRATA="$(getURL "${URL_ERRATA}")"
+if [ ${?} -ne 0 ]
+then
+	getURLError "${URL_ERRATA}"
+fi
 
 # check for valid data
 checkValidData "Security Advisories" "${RAW_ADVISORY}" "${URL_ADVISORY}"
