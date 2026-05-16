@@ -124,6 +124,10 @@ setLast () {
 # Possible fix: Always show "new item" if the day is the same?
 checkNew () {
 	chkDate="$(printf "%s" "${1}" | sed 's/-//g')"
+	if [ -z "${chkDate}" ]
+	then
+		return
+	fi
 	if [ -n "${LAST_CHECK_DATE}" -a ${LAST_CHECK_DATE} -lt ${chkDate} ]
 	then
 		ITEM_NEW="yes"
@@ -164,12 +168,16 @@ displayData () {
 		t="${u##*\">}"
 		t="${t%%<*}"
 		u="${u%%\">*}"
-		checkNew "${d}"
-		if [ "${ITEM_NEW}" = "yes" ]
+		d="$(printf "%s" "${d}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+		if [ -n "${d}" ]
 		then
-			printf "%s\n" "--- New item ---"
+			checkNew "${d}"
+			if [ "${ITEM_NEW}" = "yes" ]
+			then
+				printf "%s\n" "--- New item ---"
+			fi
+			printf "%s - %s\n%s\n\n" "${d}" "${t}" "${u}"
 		fi
-		printf "%s - %s\n%s\n\n" "${d}" "${t}" "${u}"
 	done
 }
 
